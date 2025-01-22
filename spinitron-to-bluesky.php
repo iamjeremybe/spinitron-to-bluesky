@@ -1,6 +1,14 @@
 <?php
-// Load WordPress functions
-require_once($_SERVER['DOCUMENT_ROOT'] . '/wp-load.php');
+// Alternate behavior for local testing--mostly finding alternatives to Wordpress functions
+$TESTING=False;
+
+// Make it easier to identify this script's actions in the server logs
+$APP = 'post-playlist-to-bluesky';
+
+// Load WordPress functions unless we're testing locally
+if (!$TESTING) {
+    require_once($_SERVER['DOCUMENT_ROOT'] . '/wp-load.php');
+}
 
 // Function to retrieve a value from the wp_options table
 function getOption($key) {
@@ -12,42 +20,30 @@ function setOption($key, $value) {
     update_option($key, $value);
 }
 
-// Function to get the Bluesky session token
-function getBlueskyToken() {
-    $tokenData = getOption('bluesky_playlist_session_token');
-    if ($tokenData) {
-        $tokenData = json_decode($tokenData, true);
-        if (!empty($tokenData['token']) && time() < $tokenData['expiry']) {
-            return $tokenData['token']; // Return valid token
-        }
-    }
-    return null; // No valid token found
-}
-
 // Function to store the Bluesky session token
-function storeBlueskyToken($token, $expiry) {
+function storeBlueskyToken($accessJwt, $refreshJwt, $expiry) {
+    global $TESTING;
+
     $tokenData = [
-        'token' => $token,
-        'expiry' => $expiry // Store token expiry time
+        'accessJwt' => $accessJwt,
+        'refreshJwt' => $refreshJwt,
+        'expiry' => $expiry
     ];
-    setOption('bluesky_playlist_session_token', json_encode($tokenData));
+    if ($TESTING) {
+        file_put_contents('bluesky_playlist_session_token',json_encode($tokenData));
+    } else {
+        setOption('bluesky_playlist_session_token', json_encode($tokenData));
+    }
 }
 
 // Function to authenticate and get a new session token.
-// Bluesky doesn't include an expiration date in its response, but we can calculate one.
-// If I'm reading the documentation correctly, we should never hit the limit for createSession
-// even if we retrieve a new token every 15 minutes: https://docs.bsky.app/docs/advanced-guides/rate-limits
-// (published rate as of 2025/01/20 is 30 per 5 minutes/300 per day).
 function authenticateToBluesky($username, $password) {
-    $authEndpoint = 'https://bsky.social/xrpc/com.atproto.server.createSession';
-    $expiry = "+15 minutes";
-
+    $ch = curl_init('https://bsky.social/xrpc/com.atproto.server.createSession');
     $authPayload = json_encode([
         'identifier' => $username,
         'password' => $password
     ]);
 
-    $ch = curl_init($authEndpoint);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $authPayload);
@@ -59,23 +55,98 @@ function authenticateToBluesky($username, $password) {
 
     if ($httpCode === 200) {
         $responseData = json_decode($response, true);
-        return [
-            'token' => $responseData['accessJwt'],
-            'expiry' => strtotime($expiry)
-        ];
+        if (!empty($responseData['accessJwt']) && !empty($responseData['refreshJwt'])) {
+            return [
+                'accessJwt' => $responseData['accessJwt'],
+                'refreshJwt' => $responseData['refreshJwt'],
+                'expiry' => time() + 3600 // Assume 1-hour token validity
+            ];
+        }
     }
-    return null;
+
+    return null; // Authentication failed
+}
+
+//Function to refresh the Bluesky token
+function refreshBlueskyToken($refreshJwt) {
+    $ch = curl_init('https://bsky.social/xrpc/com.atproto.server.refreshSession');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Content-Type: application/json',
+        'Authorization: Bearer ' . $refreshJwt
+    ]);
+
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpCode === 200) {
+        $responseData = json_decode($response, true);
+        if (!empty($responseData['accessJwt']) && !empty($responseData['refreshJwt'])) {
+            return [
+                'accessJwt' => $responseData['accessJwt'],
+                'refreshJwt' => $responseData['refreshJwt'],
+                'expiry' => time() + 3600 // Assume 1-hour token validity
+            ];
+        }
+    }
+
+    return null; // Failed to refresh token
+}
+
+// Function to get the Bluesky session token
+function getBlueskyToken($username, $password) {
+    global $TESTING, $APP;
+
+    $tokenData = '';
+    if ($TESTING) {
+        // Read the file back into memory
+        $fileContents = file_get_contents('bluesky_playlist_session_token');
+
+        // Decode the JSON back into an associative array
+        $tokenData = json_decode($fileContents, true);
+    } else {
+        $tokenData = getOption('bluesky_playlist_session_token');
+    }
+
+    if (!empty($tokenData['accessJwt']) && time() < $tokenData['expiry']) {
+        error_log("$APP Found a valid access token!");
+        // Return valid access token
+        return $tokenData['accessJwt'];
+    }
+
+    // Check if refresh token is available
+    if (!empty($tokenData['refreshJwt'])) {
+        error_log("$APP Access token is no longer valid. Attempting to use refresh token...");
+        $newTokenData = refreshBlueskyToken($tokenData['refreshJwt']);
+        if ($newTokenData) {
+            error_log("$APP Succesfully refreshed the access token! Storing and returning it.");
+            storeBlueskyToken($newTokenData['accessJwt'], $newTokenData['refreshJwt'], $newTokenData['expiry']);
+            return $newTokenData['accessJwt'];
+        }
+    }
+
+    // Fallback: Authenticate using username/password
+    $authData = authenticateToBluesky($username, $password);
+    if ($authData) {
+        storeBlueskyToken($authData['accessJwt'], $authData['refreshJwt'], $authData['expiry']);
+        return $authData['accessJwt'];
+    }
+
+    return null; // Authentication failed
 }
 
 // Function to handle the form data and send to Bluesky.
 // Other fields are available, but these are the only fields that are published to Discord, Icecast, etc.
 // The metadata push from Spinitron has to include the first 3 fields; spinNote can be null.
 function handleForm($formData, $sessionToken, $username) {
+    global $TESTING, $APP;
     // Extract form data
-    $songName = $formData['songName'] ?? null;
-    $artistName = $formData['artistName'] ?? null;
-    $playlistTitle = $formData['playlistTitle'] ?? null;
-    $spinNote = $formData['spinNote'] ?? null;
+    $songName = stripslashes($formData['songName']) ?? null;
+    $artistName = stripslashes($formData['artistName']) ?? null;
+    $playlistTitle = stripslashes($formData['playlistTitle']) ?? null;
+    $spinNote = stripslashes($formData['spinNote']) ?? null;
 
     if ($spinNote) {
         $spinNote = ' - ' . $spinNote;
@@ -85,7 +156,7 @@ function handleForm($formData, $sessionToken, $username) {
     $message = "Now playing on $playlistTitle: \"$songName\" by $artistName$spinNote";
 
     // Log the constructed message (for debugging)
-    error_log("Constructed message: $message");
+    error_log("$APP Constructed message: $message");
 
     // Send the post to Bluesky
     $apiEndpoint = 'https://bsky.social/xrpc/com.atproto.repo.createRecord';
@@ -120,6 +191,8 @@ function handleForm($formData, $sessionToken, $username) {
 
 // Main script logic
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    global $APP;
+
     // Retrieve form data from x-www-form-urlencoded POST request
     $formData = $_POST;
 
@@ -141,19 +214,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Get or authenticate session token
-    error_log("Checking for session token");
-    $sessionToken = getBlueskyToken();
+    error_log("$APP Checking for session token");
+    $sessionToken = getBlueskyToken($username, $password);
     if (!$sessionToken) {
-        error_log("No session token found. Authenticating w/user+password");
-        $authData = authenticateToBluesky($username, $password);
-        if ($authData) {
-            $sessionToken = $authData['token'];
-            storeBlueskyToken($authData['token'], $authData['expiry']);
-        } else {
-            http_response_code(500);
-            echo json_encode(['error' => 'Failed to authenticate with Bluesky']);
-            exit;
-        }
+        error_log("$APP Not able to find or create a session token!");
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to authenticate with Bluesky']);
+        exit;
     }
 
     // Handle the form and post to Bluesky
