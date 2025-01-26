@@ -1,6 +1,20 @@
 # spinitron-to-bluesky
 A solution written in PHP (and some prototypes written in Python) that enable Bluesky to be added as a Channel for Spinitron's Metadata Push. The PHP solution also assumes it will be installed on a Wordpress site, with access to the Wordpress database.
 
+If you are interested in using this for your station, and your site is built using Wordpress, only the PHP script, __spinitron-to-bluesky.php__, is needed in order to get a working relay up and running. The two Python scripts are prototypes.
+
+## Setup
+* This PHP script works with an existing Bluesky account, which you can create by starting [here](https://bsky.app/).
+* __This script is set up to work with Wordpress.__ It has a built-in testing option that writes an authentication token to a local file, but I don't recommend this behavior in a live setup. To enable this testing option, set `$TESTING=True;` at the top of the script, and define the username and password in the main body of the script, instead of calling the function to retrieve these values from the Wordpress database.
+* The following values should be added to the Wordpress table wp_options before enabling this script:
+  * __bluesky_playlist_username__ - Your Bluesky account (ex: "yourblueskyaccount.bsky.social")
+  * __bluesky_playlist_password__ - Your Bluesky account's password
+* The script will add/update a third value, bluesky_playlist_session_token, to the wp_options table on its own.
+* Copy the script to your site. You may want/need to create a folder for it, and rename it "index.html".
+* From Spinitron's main page, select Admin-->Metadata push. Add a new Channel.
+  * The URL should match the installation path of your script. Ex: `POST https://yourstation.org/bluesky-publish/index.php?songName=%sn%&artistName=%an%&playlistTitle=%wn%&spinNote=%se%`
+  * Here's a link to [Spinitron's metadata push documentation](https://forum.spinitron.com/t/metadata-push-guide/144) if you need more details.
+ 
 ## Background
 Along with many other non-commercial stations, [KFAI](http://kfai.org) uses [Spinitron](https://spinitron.com/) for playlist management. Spinitron has built-in metadata publishing capabilities--for instance, if you are listening to the station with an HD-capable radio, the artist name and song title are pushed to that service from Spinitron.
 
@@ -53,5 +67,6 @@ ChatGPT did me dirty and generated bad code for that expiry check. The script wa
 So I came back the next morning with fresh eyes, fixed the bug, added more detailed logging, and performed more thorough testing of each of the three scenarios above. This second iteration has been working steadily 24/7 for days now.
 
 ## Future enhancements
+* Refactoring?
 * When manual updates to a playlist entry are made in Spinitron, it will send a new push of that entry's information. Sometimes the changes are made to fields that aren't published to Bluesky (album title, release date, label, etc.), so the new Bluesky post contains all of the same data as the previous post. I've been thinking about possibly storing the fields of the most recent post, and not publishing incoming pushes if all of the fields match. The only thing stopping me is the understanding that some KFAI DJs have actually played the same song multiple times in a row. The most recent instance of this that I recall was to persuade listeners to contribute to the station's member drive (looking at you, Ron).
 * Spinitron often has cover art in its database--you can see examples of this on the feed on their homepage. It'd be great to publish this cover art to Bluesky. 
