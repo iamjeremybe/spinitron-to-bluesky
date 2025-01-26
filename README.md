@@ -45,7 +45,7 @@ ChatGPT helpfully generated the PHP code, but I was still left with the task of 
 
 My initial test worked! So I excitedly pushed my code to the website and enabled the new channel in Spinitron. It worked for about three hours, then stopped.
 
-ChatGPT did me dirty and generated bad code for that expiry check in the second step. The script was only authenticating to Bluesky with user+password, reached its 100-login limit, and was disabled on Bluesky's end. This is where I sheepishly admit I was a little too excited and didn't fully test the various authentication statuses, which I then laid out:
+ChatGPT did me dirty and generated bad code for that expiry check. The script was only authenticating to Bluesky with user+password, but it reached its 100-login limit, and was disabled on Bluesky's end. This is where I sheepishly admit I was a little too excited and didn't fully test the various authentication statuses, which I then laid out:
 * No token exists, or token is fully expired: use user+password
 * Access token exists and hasn't yet expired: use it
 * Access token exists, but has expired: use refresh token to obtain a new access token
