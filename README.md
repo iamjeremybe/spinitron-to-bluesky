@@ -2,7 +2,7 @@
 A solution written in PHP (and some prototypes written in Python) that enable Bluesky to be added as a Channel for Spinitron's Metadata Push. The PHP solution also assumes it will be installed on a Wordpress site, with access to the Wordpress database.
 
 ## Background
-Along with many other non-commercial stations, KFAI uses [Spinitron](https://spinitron.com/) for playlist management. Spinitron has built-in metadata publishing capabilities--for instance, if you are listening to the station with an HD-capable radio, the artist name and song title are pushed to that service from Spinitron.
+Along with many other non-commercial stations, [KFAI](http://kfai.org) uses [Spinitron](https://spinitron.com/) for playlist management. Spinitron has built-in metadata publishing capabilities--for instance, if you are listening to the station with an HD-capable radio, the artist name and song title are pushed to that service from Spinitron.
 
 Twitter was one of those channels, until automated services were largely disabled on that platform in 2023. An interest in resurrecting an account to publish KFAI's playlist on Bluesky rose with the recent waves of migration away from Twitter/X and Meta products to Bluesky. As one of those interested volunteers--and because KFAI is a volunteer-driven station--I began researching what it would take to make this work.
 
