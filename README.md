@@ -40,7 +40,7 @@ Costs would likely be low, but again, this was a lot of setup for a relatively s
 ### PHP
 I shared my proposed solutions with KFAI's web developer when we were able to connect. The station's website is built using Wordpress, so his proposed solution was to use PHP instead, and store credentials in the Wordpress database. I did not know PHP at all, so I watched a few short videos to learn the basic syntax, then engaged ChatGPT to help me convert my working Python+Flask prototype into a PHP version, using [Wordpress' wp_options table](https://codex.wordpress.org/Database_Description) to store credentials.
 
-##Testing
+## Testing
 ChatGPT helpfully generated the PHP code, but I was still left with the task of testing it. After some research, I settled on a local installation of XAMPP, and I created a small web form to stand in as the Spinitron service.
 
 My initial test worked! So I excitedly pushed my code to the website and enabled the new channel in Spinitron. It worked for about three hours, then stopped.
