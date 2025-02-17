@@ -12,9 +12,12 @@ If you are interested in using this for your station, and your site is built usi
 * The script will add/update a third value, bluesky_playlist_session_token, to the wp_options table on its own.
 * Copy the script to your site. You may want/need to create a folder for it, and rename it "index.html".
 * From Spinitron's main page, select Admin-->Metadata push. Add a new Channel.
-  * The URL should match the installation path of your script. Ex: `POST https://yourstation.org/bluesky-publish/index.php?songName=%sn%&artistName=%an%&playlistTitle=%wn%&spinNote=%se%`
+  * The URL should match the installation path of your script. Ex: `POST https://yourstation.org/bluesky-publish/index.php?songName=%sn%&artistName=%an%&playlistTitle=%wn%&spinNote=%se%&coverArt=%ua%`
   * Here's a link to [Spinitron's metadata push documentation](https://forum.spinitron.com/t/metadata-push-guide/144) if you need more details.
- 
+
+## Features
+Spinitron's metadtata database incldues cover art! This script will retrieve and upload cover art when it's available. The URL provided by the __%ua%__ token points to a thumbnail (170x170 pixel) image, but this script modifies that URL so a higher-res image is retrieved (600x600 pixels).
+
 ## Background
 Along with many other non-commercial stations, [KFAI](http://kfai.org) uses [Spinitron](https://spinitron.com/) for playlist management. Spinitron has built-in metadata publishing capabilities--for instance, if you are listening to the station with an HD-capable radio, the artist name and song title are pushed to that service from Spinitron.
 
@@ -67,6 +70,5 @@ ChatGPT did me dirty and generated bad code for that expiry check. The script wa
 So I came back the next morning with fresh eyes, fixed the bug, added more detailed logging, and performed more thorough testing of each of the three scenarios above. This second iteration has been working steadily 24/7 for days now.
 
 ## Future enhancements
-* Refactoring?
+* Further refactoring?
 * When manual updates to a playlist entry are made in Spinitron, it will send a new push of that entry's information. Sometimes the changes are made to fields that aren't published to Bluesky (album title, release date, label, etc.), so the new Bluesky post contains all of the same data as the previous post. I've been thinking about possibly storing the fields of the most recent post, and not publishing incoming pushes if all of the fields match. The only thing stopping me is the understanding that some KFAI DJs have actually played the same song multiple times in a row. The most recent instance of this that I recall was to persuade listeners to contribute to the station's member drive (looking at you, Ron).
-* Spinitron often has cover art in its database--you can see examples of this on the feed on their homepage. It'd be great to publish this cover art to Bluesky. 
