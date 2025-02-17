@@ -16,7 +16,7 @@ If you are interested in using this for your station, and your site is built usi
   * Here's a link to [Spinitron's metadata push documentation](https://forum.spinitron.com/t/metadata-push-guide/144) if you need more details.
 
 ## Features
-Spinitron's metadtata database includes cover art! This script will retrieve and upload cover art when it's available. The URL provided by the __%ua%__ token points to a thumbnail (170x170 pixel) image, but this script modifies that URL so a higher-res image is retrieved (600x600 pixels).
+Spinitron's metadtata database includes cover art! This script will retrieve and upload cover art when it's available. The URL provided by the __%ua%__ token points to a thumbnail-size image (170x170 pixels), but this script modifies that URL so a higher-res image is retrieved (600x600 pixels).
 
 ## Background
 Along with many other non-commercial stations, [KFAI](http://kfai.org) uses [Spinitron](https://spinitron.com/) for playlist management. Spinitron has built-in metadata publishing capabilities--for instance, if you are listening to the station with an HD-capable radio, the artist name and song title are pushed to that service from Spinitron.
