@@ -10,16 +10,6 @@ if (!$TESTING) {
     require_once($_SERVER['DOCUMENT_ROOT'] . '/wp-load.php');
 }
 
-// Function to retrieve a value from the wp_options table
-function getOption($key) {
-    return get_option($key);
-}
-
-// Function to store a value in the wp_options table
-function setOption($key, $value) {
-    update_option($key, $value);
-}
-
 // Function to store the Bluesky session token
 function storeBlueskyToken($accessJwt, $refreshJwt, $expiry) {
     global $TESTING;
@@ -32,7 +22,7 @@ function storeBlueskyToken($accessJwt, $refreshJwt, $expiry) {
     if ($TESTING) {
         file_put_contents('bluesky_playlist_session_token',json_encode($tokenData));
     } else {
-        setOption('bluesky_playlist_session_token', json_encode($tokenData));
+        update_option('bluesky_playlist_session_token', json_encode($tokenData));
     }
 }
 
@@ -63,7 +53,6 @@ function authenticateToBluesky($username, $password) {
             ];
         }
     }
-
     return null; // Authentication failed
 }
 
@@ -107,7 +96,7 @@ function getBlueskyToken($username, $password) {
         // Decode the JSON back into an associative array
         $tokenData = json_decode($fileContents, true);
     } else {
-        $tokenData = getOption('bluesky_playlist_session_token');
+        $tokenData = get_option('bluesky_playlist_session_token');
     }
 
     if (!empty($tokenData['accessJwt']) && time() < $tokenData['expiry']) {
@@ -137,9 +126,141 @@ function getBlueskyToken($username, $password) {
     return null; // Authentication failed
 }
 
+function retrieveImage($imageUrl) {
+    global $APP;
+
+    // Retrieve a larger resolution image by altering the URL Spinitron sent.
+    // The URL Spinitron provides for cover art defaults to a tiny 170x170 pixels.
+    // This can be substituted for a larger 600x600 image.
+    $updatedUrl = str_replace("170x170bb.jpg", "600x600bb.jpg", $imageUrl);
+
+    error_log("Retrieving URL: $updatedUrl");
+    $ch = curl_init($updatedUrl);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);  // Return image data instead of outputting it
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);  // Follow redirects if necessary
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);           // Set timeout in seconds
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);  // Verify SSL certificate
+    $imageData = curl_exec($ch);
+
+    // Check for errors
+    if (curl_errno($ch)) {
+        error_log("cURL Error: " . curl_error($ch));
+        return null;
+    }
+    curl_close($ch);
+
+    if (!$imageData) {
+        return null; // Failed to download image
+    }
+
+    // Get image type
+    $imageInfo = getimagesizefromstring($imageData);
+    if (!$imageInfo) {
+        return null; // Not a valid image
+    }
+
+    $mimeType = $imageInfo['mime'];
+    $originalWidth = $imageInfo[0];
+    $originalHeight = $imageInfo[1];
+
+    $image = imagecreatefromstring($imageData);
+
+    if (!$image) {
+        return null; // Failed to process image
+    }
+    error_log("$APP Found an image with dimensions $originalWidth, $originalHeight");
+
+/* 
+   I read a warning in the Bluesky documentation 
+   that images with intact metadata may eventually be disallowed.
+   If that ever happens, this code should strip metadata and allow us to post.
+   It comes at the expense of some time spent on file conversion,
+   so until it's obligatory, skip this step. 
+*/
+/*  ob_start();
+    if ($mimeType === 'image/jpeg') {
+        imagejpeg($image, null, 90); // Adjust quality as needed
+    //} elseif ($mimeType === 'image/png') {
+    //    imagepng($image, null, 9);
+    } else {
+        return null; // Unsupported image format
+    }
+    $cleanImageData = ob_get_clean();
+*/
+    $cleanImageData = $imageData; //Remove this line if metadata-stripping code is used
+    
+    // Free memory
+    imagedestroy($image);
+    return $cleanImageData;
+}
+
+function uploadImageToBluesky($imageUrl, $accessJwt) {
+    // Download and strip metadata
+    $cleanImageData = retrieveImage($imageUrl);
+    if (!$cleanImageData) {
+        return null; // Failed to process image
+    }
+
+    // Get MIME type again since data is now cleaned
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $mimeType = $finfo->buffer($cleanImageData);
+
+    // Upload to Bluesky
+    $ch = curl_init('https://bsky.social/xrpc/com.atproto.repo.uploadBlob');
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Authorization: Bearer ' . $accessJwt,
+        'Content-Type: ' . $mimeType
+    ]);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $cleanImageData);
+
+    $response = curl_exec($ch);
+    curl_close($ch);
+
+    $responseData = json_decode($response, true);
+    return $responseData['blob'] ?? null;
+}
+
+function constructBlueskyPostWithImage($message, $blob, $alttext, $username) {
+    // Construct the post payload with an embedded image
+    $payload = [
+        'repo' => $username,
+        'collection' => 'app.bsky.feed.post',
+        'record' => [
+            'text' => $message,
+            'createdAt' => date('c'),
+            'embed' => [
+                '$type' => 'app.bsky.embed.images',
+                'images' => [
+                    [
+                        'alt' => $alttext,
+                        'image' => $blob
+                    ]
+                ]
+            ]
+        ]
+    ];
+
+    return $payload;
+}
+
+function constructBlueskyPost($message,$username) {
+    $payload = [
+        'collection' => "app.bsky.feed.post",
+        'repo' => $username,
+        'record' => [
+            'text' => $message,
+            'createdAt' => date('c')
+        ]
+    ];
+
+    return $payload;
+}
+
 // Function to handle the form data and send to Bluesky.
 // Other fields are available, but these are the only fields that are published to Discord, Icecast, etc.
-// The metadata push from Spinitron has to include the first 3 fields; spinNote can be null.
+// The metadata push from Spinitron has to include the first 3 fields; spinNote and coverArt can be null.
 function handleForm($formData, $sessionToken, $username) {
     global $TESTING, $APP;
     // Extract form data
@@ -147,6 +268,7 @@ function handleForm($formData, $sessionToken, $username) {
     $artistName = stripslashes($formData['artistName']) ?? null;
     $playlistTitle = stripslashes($formData['playlistTitle']) ?? null;
     $spinNote = stripslashes($formData['spinNote']) ?? null;
+    $coverArt = stripslashes($formData['coverArt']) ?? null;
 
     if ($spinNote) {
         $spinNote = ' - ' . $spinNote;
@@ -158,17 +280,19 @@ function handleForm($formData, $sessionToken, $username) {
     // Log the constructed message (for debugging)
     error_log("$APP Constructed message: $message");
 
+    // Retrieve the cover art (optional--we'll post without if we don't successfully retrieve it)
+    if ($coverArt) {
+        $image = uploadImageToBluesky($coverArt, $sessionToken);
+        if ($image) {
+            $alttext = "\"$songName\" by $artistName";
+            $payload = constructBlueskyPostWithImage($message,$image, $alttext, $username);
+        }
+    } else {
+        $payload = constructBlueskyPost($message,$username);
+    }
+
     // Send the post to Bluesky
     $apiEndpoint = 'https://bsky.social/xrpc/com.atproto.repo.createRecord';
-    $payload = [
-        "collection" => "app.bsky.feed.post",
-        "repo" => $username, // Typically your DID
-        "record" => [
-            "text" => $message,
-            "createdAt" => date('c')
-        ]
-    ];
-
     $ch = curl_init($apiEndpoint);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
@@ -191,7 +315,7 @@ function handleForm($formData, $sessionToken, $username) {
 
 // Main script logic
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    global $APP;
+    global $TESTING, $APP;
 
     // Retrieve form data from x-www-form-urlencoded POST request
     $formData = $_POST;
@@ -204,8 +328,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Get stored credentials
-      $username = getOption('bluesky_playlist_username');
-      $password = getOption('bluesky_playlist_password');
+    if (!$TESTING) {
+        $username = get_option('bluesky_playlist_username');
+        $password = get_option('bluesky_playlist_password');  
+    } else {
+        $username = "username"; 
+        $password = "password";  
+    }
 
     if (!$username || !$password) {
         http_response_code(500);
